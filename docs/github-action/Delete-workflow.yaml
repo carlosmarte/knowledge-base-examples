@@ -1,0 +1,4 @@
+- name: Delete workflow
+  run: |
+    gh auth login --with-token <<< "${{ secrets.PAT_TOKEN }}"
+    gh run list --limit 100 | grep 'workflow-name' | awk '{print $1}' | xargs -n1 gh run delete --yes
