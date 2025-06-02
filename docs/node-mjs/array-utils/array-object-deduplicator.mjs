@@ -1,6 +1,5 @@
-const crypto = require("crypto");
-
-class ObjectDeduplicator {
+import crypto from "crypto";
+class ArrayObjectDeduplicator {
   /**
    * Recursively sort keys in object for stable hashing
    */
