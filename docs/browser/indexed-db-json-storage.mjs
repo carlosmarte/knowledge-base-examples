@@ -1,5 +1,3 @@
-// jsonStore.mjs — IndexedDB JSON interface with ID support and loadAll
-
 const DB_NAME = 'JsonDB';
 const STORE_NAME = 'documents';
 
@@ -68,7 +66,7 @@ export async function loadAllJSON() {
         try {
           allData[cursor.key] = JSON.parse(cursor.value);
         } catch {
-          allData[cursor.key] = null; // or skip/mark as invalid
+          allData[cursor.key] = null;
         }
         cursor.continue();
       } else {
@@ -82,16 +80,32 @@ export async function loadAllJSON() {
   });
 }
 
+export async function exportAllToJSONFile(filename = 'indexeddb_export.json') {
+  try {
+    const data = await loadAllJSON();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+
+    console.log(`📁 Exported data to ${filename}`);
+  } catch (err) {
+    console.error('❌ Export failed:', err.message);
+  }
+}
+
 
 const run = async () => {
-  await saveJSON('doc:1', JSON.stringify({ type: 'note', content: 'Hello world' }));
-  await saveJSON('doc:2', JSON.stringify({ type: 'task', done: false }));
+  await saveJSON('item:001', JSON.stringify({ label: 'Example', value: 123 }));
+  await saveJSON('item:002', JSON.stringify({ label: 'Another', value: 456 }));
 
-  const single = await loadJSON('doc:1');
-  console.log('📄 Loaded single:', single);
-
-  const all = await loadAllJSON();
-  console.log('📚 Loaded all:', all);
+  await exportAllToJSONFile();
 };
 
 run();
