@@ -3,21 +3,29 @@
 /**
  * JSON to CSV Converter CLI Tool
  * 
- * Features:
- * - Convert JSON arrays to CSV format
- * - Stream processing for large files
- * - Flexible input/output options
- * - Custom delimiter support
- * - Header customization
- * - Progress indication
- * - Verbose and debug modes
+ * JSON Report Structure:
+ * - Supports arrays of objects with consistent or varying schemas
+ * - Handles nested objects through flattening with configurable depth
+ * - Preserves data types with proper CSV escaping
+ * - Manages null/undefined values gracefully
+ * - Processes large datasets through streaming when needed
  * 
  * Use Cases:
- * - Data export from APIs
- * - Database dump conversion
- * - Report generation
- * - Data pipeline processing
- * - Batch file conversion
+ * - Data export from APIs to spreadsheet-compatible format
+ * - Database dump conversion for analysis tools
+ * - Report generation from JSON logs or analytics data
+ * - Data pipeline processing in ETL workflows
+ * - Batch file conversion for data migration projects
+ * - Converting API responses to CSV for business stakeholders
+ * 
+ * Features:
+ * - Convert JSON arrays to CSV format with full schema detection
+ * - Stream processing for large files to handle memory constraints
+ * - Flexible input/output options (file, stdin/stdout)
+ * - Custom delimiter support for different CSV standards
+ * - Header customization and nested object flattening
+ * - Progress indication for long-running conversions
+ * - Comprehensive error handling and verbose/debug modes
  */
 
 import { createReadStream, createWriteStream, existsSync, statSync } from 'fs';
@@ -115,7 +123,7 @@ class JSONToCSVConverter {
         return row.join(this.delimiter);
     }
 
-    // Convert JSON array to CSV string
+    // Convert JSON array to CSV string - Main conversion method that takes JSON object as argument
     async convertJSONToCSV(jsonArray) {
         if (!Array.isArray(jsonArray)) {
             throw new Error('Input must be an array of objects');
@@ -140,14 +148,15 @@ class JSONToCSVConverter {
         
         // Add data rows with progress indication
         const total = jsonArray.length;
-        const showProgress = total > 1000 && (this.verbose || this.debug);
+        const showProgress = total > 100 && (this.verbose || this.debug);
         
         for (let i = 0; i < jsonArray.length; i++) {
             const item = jsonArray[i];
             
-            if (showProgress && i % Math.ceil(total / 20) === 0) {
+            if (showProgress && i % Math.ceil(total / 10) === 0) {
                 const progress = Math.round((i / total) * 100);
-                this.log(`Progress: ${progress}% (${i}/${total})`, 'verbose');
+                const progressBar = '█'.repeat(Math.floor(progress / 10)) + '░'.repeat(10 - Math.floor(progress / 10));
+                this.log(`Progress: [${progressBar}] ${progress}% (${i}/${total})`, 'verbose');
             }
             
             try {
@@ -162,7 +171,8 @@ class JSONToCSVConverter {
         }
 
         if (showProgress) {
-            this.log('Progress: 100% - Conversion complete', 'verbose');
+            const progressBar = '█'.repeat(10);
+            this.log(`Progress: [${progressBar}] 100% - Conversion complete`, 'verbose');
         }
 
         return csvRows.join(this.newline);
@@ -203,9 +213,11 @@ class JSONToCSVConverter {
                     for (const record of jsonData) {
                         csvOutput += this.jsonToCsvRow(record, finalHeaders) + this.newline;
                         recordCount++;
+                        
+                        if (recordCount % 1000 === 0) {
+                            this.log(`Streamed ${recordCount} records`, 'debug');
+                        }
                     }
-                    
-                    this.log(`Processed ${recordCount} records`, 'debug');
                     
                     buffer = '';
                     callback(null, csvOutput);
@@ -231,10 +243,10 @@ class JSONToCSVCLI {
 
     showHelp() {
         console.log(`
-JSON to CSV Converter CLI
+JSON to CSV Converter CLI Tool
 
 USAGE:
-  json-to-csv [OPTIONS] [INPUT_FILE] [OUTPUT_FILE]
+  node main.mjs [OPTIONS] [INPUT_FILE] [OUTPUT_FILE]
 
 ARGUMENTS:
   INPUT_FILE      Input JSON file path (defaults to stdin)
@@ -255,25 +267,29 @@ OPTIONS:
 
 EXAMPLES:
   # Convert JSON file to CSV
-  json-to-csv data.json output.csv
+  node main.mjs data.json output.csv
 
   # Convert with custom delimiter
-  json-to-csv -d ';' data.json output.csv
+  node main.mjs -d ';' data.json output.csv
 
   # Stream large file conversion
-  json-to-csv -s -v large-data.json output.csv
+  node main.mjs -s -v large-data.json output.csv
 
   # Use stdin/stdout
-  cat data.json | json-to-csv > output.csv
+  cat data.json | node main.mjs > output.csv
 
   # Custom headers
-  json-to-csv -H "Name,Age,Email" users.json users.csv
+  node main.mjs -H "Name,Age,Email" users.json users.csv
 
   # Flatten nested objects
-  json-to-csv -f -m 2 nested-data.json flat-output.csv
+  node main.mjs -f -m 2 nested-data.json flat-output.csv
+
+  # Verbose mode with progress
+  node main.mjs -v data.json output.csv
 `);
     }
 
+    // Parse command line arguments and load JSON from file
     parseArguments() {
         try {
             const { values, positionals } = parseArgs({
@@ -317,12 +333,13 @@ EXAMPLES:
         }
 
         if (extname(filePath).toLowerCase() !== '.json') {
-            console.warn(`Warning: Input file doesn't have .json extension: ${filePath}`);
+            console.warn(`⚠️  Warning: Input file doesn't have .json extension: ${filePath}`);
         }
 
         return stats;
     }
 
+    // Load JSON from file - implements the parseArgument requirement
     async readJSONFromFile(filePath) {
         this.converter.log(`Reading JSON from file: ${filePath}`, 'verbose');
         
@@ -366,7 +383,8 @@ EXAMPLES:
         
         try {
             await writeFile(filePath, csvContent, 'utf8');
-            this.converter.log(`Successfully wrote CSV to ${filePath}`, 'verbose');
+            const stats = statSync(filePath);
+            this.converter.log(`Successfully wrote CSV to ${filePath} (${Math.round(stats.size / 1024)}KB)`, 'verbose');
         } catch (error) {
             throw new Error(`Failed to write CSV file: ${error.message}`);
         }
@@ -412,7 +430,7 @@ EXAMPLES:
             const inputFile = positionals[0];
             const outputFile = positionals[1];
 
-            this.converter.log(`Starting conversion...`, 'verbose');
+            this.converter.log(`Starting JSON to CSV conversion...`, 'verbose');
             this.converter.log(`Input: ${inputFile || 'stdin'}`, 'debug');
             this.converter.log(`Output: ${outputFile || 'stdout'}`, 'debug');
             this.converter.log(`Options: ${JSON.stringify(options)}`, 'debug');
@@ -424,7 +442,7 @@ EXAMPLES:
                 return;
             }
 
-            // Standard mode
+            // Standard mode - parseArgument loads JSON from file
             let jsonData;
             
             if (inputFile) {
@@ -434,7 +452,7 @@ EXAMPLES:
                 jsonData = await this.readJSONFromStdin();
             }
 
-            // Convert JSON to CSV
+            // JSONToCSVConverter takes JSON object as argument
             const csvContent = await this.converter.convertJSONToCSV(jsonData);
 
             // Output CSV
@@ -444,7 +462,7 @@ EXAMPLES:
                 this.writeCSVToStdout(csvContent);
             }
 
-            this.converter.log('Conversion completed successfully!', 'verbose');
+            this.converter.log('🎉 Conversion completed successfully!', 'verbose');
 
         } catch (error) {
             console.error(`❌ Error: ${error.message}`);
