@@ -9,6 +9,7 @@
  * - Preserves data types with proper CSV escaping
  * - Manages null/undefined values gracefully
  * - Processes large datasets through streaming when needed
+ * - Custom column ordering for structured output control
  * 
  * Use Cases:
  * - Data export from APIs to spreadsheet-compatible format
@@ -17,6 +18,8 @@
  * - Data pipeline processing in ETL workflows
  * - Batch file conversion for data migration projects
  * - Converting API responses to CSV for business stakeholders
+ * - Custom column ordering for specific reporting requirements
+ * - Standardized output format across different data sources
  * 
  * Features:
  * - Convert JSON arrays to CSV format with full schema detection
@@ -24,6 +27,7 @@
  * - Flexible input/output options (file, stdin/stdout)
  * - Custom delimiter support for different CSV standards
  * - Header customization and nested object flattening
+ * - **Custom column ordering** - specify exact column order via Array<String>
  * - Progress indication for long-running conversions
  * - Comprehensive error handling and verbose/debug modes
  */
@@ -41,6 +45,7 @@ class JSONToCSVConverter {
         this.quote = options.quote || '"';
         this.newline = options.newline || '\n';
         this.headers = options.headers || null;
+        this.columnOrder = options.columnOrder || null; // NEW: Custom column order
         this.verbose = options.verbose || false;
         this.debug = options.debug || false;
         this.flatten = options.flatten || false;
@@ -102,7 +107,7 @@ class JSONToCSVConverter {
         return stringField;
     }
 
-    // Get all unique keys from JSON array
+    // Get all unique keys from JSON array with custom column ordering support
     extractHeaders(jsonArray) {
         const headerSet = new Set();
         
@@ -113,7 +118,36 @@ class JSONToCSVConverter {
             }
         }
         
-        return Array.from(headerSet).sort();
+        const allHeaders = Array.from(headerSet);
+        
+        // If custom headers are specified, use them as-is
+        if (this.headers) {
+            this.log(`Using custom headers: ${this.headers.join(', ')}`, 'debug');
+            return this.headers;
+        }
+        
+        // If column order is specified, arrange columns accordingly
+        if (this.columnOrder) {
+            const orderedHeaders = [];
+            const availableHeaders = new Set(allHeaders);
+            
+            // Add columns in specified order
+            for (const col of this.columnOrder) {
+                orderedHeaders.push(col);
+                availableHeaders.delete(col);
+            }
+            
+            // Add remaining columns that weren't specified in order
+            const remainingHeaders = Array.from(availableHeaders).sort();
+            orderedHeaders.push(...remainingHeaders);
+            
+            this.log(`Applied column order. Ordered: [${this.columnOrder.join(', ')}] + Remaining: [${remainingHeaders.join(', ')}]`, 'debug');
+            
+            return orderedHeaders;
+        }
+        
+        // Default: alphabetical sort
+        return allHeaders.sort();
     }
 
     // Convert single JSON object to CSV row
@@ -136,9 +170,25 @@ class JSONToCSVConverter {
 
         this.log(`Processing ${jsonArray.length} records`, 'verbose');
 
-        // Extract headers
-        const headers = this.headers || this.extractHeaders(jsonArray);
-        this.log(`Headers: ${headers.join(', ')}`, 'debug');
+        // Extract headers with custom ordering support
+        const headers = this.extractHeaders(jsonArray);
+        this.log(`Final headers (${headers.length}): ${headers.join(', ')}`, 'debug');
+
+        // Validate column order if specified
+        if (this.columnOrder) {
+            const availableColumns = new Set();
+            for (const item of jsonArray) {
+                if (typeof item === 'object' && item !== null) {
+                    const flattened = this.flattenObject(item);
+                    Object.keys(flattened).forEach(key => availableColumns.add(key));
+                }
+            }
+            
+            const missingColumns = this.columnOrder.filter(col => !availableColumns.has(col));
+            if (missingColumns.length > 0) {
+                this.log(`Warning: Specified columns not found in data: ${missingColumns.join(', ')}`, 'verbose');
+            }
+        }
 
         // Create CSV content
         const csvRows = [];
@@ -258,6 +308,7 @@ OPTIONS:
   -q, --quote <char>          Quote character (default: '"')
   -n, --newline <char>        Newline character (default: '\\n')
   -H, --headers <list>        Custom headers (comma-separated)
+  -c, --column-order <list>   Column order (comma-separated) - NEW FEATURE
   -f, --flatten               Flatten nested objects
   -m, --max-depth <num>       Maximum depth for flattening (default: 3)
   -s, --stream                Use streaming mode for large files
@@ -273,20 +324,26 @@ EXAMPLES:
   # Convert with custom delimiter
   node main.mjs -d ';' data.json output.csv
 
-  # Stream large file conversion
-  node main.mjs -s -v large-data.json output.csv
+  # **NEW**: Specify column order
+  node main.mjs -c "name,age,email,created_at" users.json users.csv
 
-  # Use stdin/stdout
-  cat data.json | node main.mjs > output.csv
+  # **NEW**: Custom column order with nested flattening
+  node main.mjs -f -c "user.name,user.email,stats.total,stats.avg" data.json report.csv
 
-  # Custom headers
-  node main.mjs -H "Name,Age,Email" users.json users.csv
+  # Stream large file conversion with column order
+  node main.mjs -s -v -c "id,timestamp,event,data" large-logs.json output.csv
 
-  # Flatten nested objects
-  node main.mjs -f -m 2 nested-data.json flat-output.csv
+  # Use stdin/stdout with column ordering
+  cat data.json | node main.mjs -c "priority,name,status" > output.csv
 
-  # Verbose mode with progress
-  node main.mjs -v data.json output.csv
+  # Custom headers (different from column order - renames columns)
+  node main.mjs -H "Full Name,Age,Email Address" users.json users.csv
+
+  # Flatten nested objects with specific column order
+  node main.mjs -f -m 2 -c "id,profile.name,profile.email,settings.theme" users.json flat-output.csv
+
+  # Verbose mode with progress and column ordering
+  node main.mjs -v -c "timestamp,level,message,source" logs.json structured-logs.csv
 `);
     }
 
@@ -299,6 +356,7 @@ EXAMPLES:
                     quote: { type: 'string', short: 'q', default: '"' },
                     newline: { type: 'string', short: 'n', default: '\n' },
                     headers: { type: 'string', short: 'H' },
+                    'column-order': { type: 'string', short: 'c' }, // NEW: Column order option
                     flatten: { type: 'boolean', short: 'f', default: false },
                     'max-depth': { type: 'string', short: 'm', default: '3' },
                     stream: { type: 'boolean', short: 's', default: false },
@@ -314,7 +372,8 @@ EXAMPLES:
                 options: {
                     ...values,
                     maxDepth: parseInt(values['max-depth'], 10),
-                    headers: values.headers ? values.headers.split(',').map(h => h.trim()) : null
+                    headers: values.headers ? values.headers.split(',').map(h => h.trim()) : null,
+                    columnOrder: values['column-order'] ? values['column-order'].split(',').map(h => h.trim()) : null // NEW: Parse column order
                 },
                 positionals
             };
@@ -421,8 +480,13 @@ EXAMPLES:
             }
 
             if (options.version) {
-                console.log('JSON to CSV Converter v1.0.0');
+                console.log('JSON to CSV Converter v1.1.0 (with Column Ordering)');
                 return;
+            }
+
+            // Validate column order and headers combination
+            if (options.headers && options.columnOrder) {
+                console.warn('⚠️  Warning: Both --headers and --column-order specified. --headers takes precedence and will override column ordering.');
             }
 
             // Initialize converter with options
@@ -435,6 +499,10 @@ EXAMPLES:
             this.converter.log(`Input: ${inputFile || 'stdin'}`, 'debug');
             this.converter.log(`Output: ${outputFile || 'stdout'}`, 'debug');
             this.converter.log(`Options: ${JSON.stringify(options)}`, 'debug');
+
+            if (options.columnOrder) {
+                this.converter.log(`Column order specified: [${options.columnOrder.join(', ')}]`, 'verbose');
+            }
 
             // Streaming mode for large files
             if (options.stream && inputFile) {
