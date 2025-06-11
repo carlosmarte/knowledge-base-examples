@@ -184,6 +184,7 @@ class JSONToCSVConverter {
         let buffer = '';
         let recordCount = 0;
         const extractedHeaders = headers ? headers.slice() : null;
+        const self = this; // Store reference to maintain context
 
         return new Transform({
             objectMode: false,
@@ -199,23 +200,23 @@ class JSONToCSVConverter {
                     }
 
                     // Extract headers if not provided
-                    const finalHeaders = extractedHeaders || this.extractHeaders(jsonData);
+                    const finalHeaders = extractedHeaders || self.extractHeaders(jsonData);
                     
                     let csvOutput = '';
                     
                     // Add headers on first chunk
                     if (isFirstChunk) {
-                        csvOutput += finalHeaders.map(h => this.escapeCSVField(h)).join(this.delimiter) + this.newline;
+                        csvOutput += finalHeaders.map(h => self.escapeCSVField(h)).join(self.delimiter) + self.newline;
                         isFirstChunk = false;
                     }
                     
                     // Convert each record
                     for (const record of jsonData) {
-                        csvOutput += this.jsonToCsvRow(record, finalHeaders) + this.newline;
+                        csvOutput += self.jsonToCsvRow(record, finalHeaders) + self.newline;
                         recordCount++;
                         
                         if (recordCount % 1000 === 0) {
-                            this.log(`Streamed ${recordCount} records`, 'debug');
+                            self.log(`Streamed ${recordCount} records`, 'debug');
                         }
                     }
                     
@@ -230,7 +231,7 @@ class JSONToCSVConverter {
                         callback(error);
                     }
                 }
-            }.bind(this)
+            }
         });
     }
 }
