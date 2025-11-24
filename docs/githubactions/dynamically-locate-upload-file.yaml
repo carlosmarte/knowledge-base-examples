@@ -1,0 +1,15 @@
+- name: Find and upload dynamic saucectl tmp zip
+  if: always()
+  run: |
+    ZIP_PATH=$(find /tmp -type f -path "*saucectl*/app.zip" | head -n 1)
+    echo "Found zip: $ZIP_PATH"
+    mkdir -p tmp_upload
+    cp "$ZIP_PATH" tmp_upload/
+  shell: bash
+
+- name: Upload dynamic zip artifact
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: sauce-payload
+    path: tmp_upload/app.zip
